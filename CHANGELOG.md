@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0-radar.2 (fork)
+
+- Fix: stopping one instance no longer kills another instance's MT5 terminal (each instance tracks its own terminal by its working folder).
+
 ## 1.3.0-radar.1 (fork)
 
 - Several native instances side by side: `runtime/macos/instances.sh`; `SMT5_LABEL`, `SMT5_UNIT`, `SMT5_WINE_HOME` in `native.sh`. See [FORK.md](FORK.md).

@@ -594,10 +594,24 @@ read_pid() { cat "$STATE/$1.pid" 2>/dev/null; }
 # The PID we started is the terminal (wine execs in place; ps then shows
 # "terminal64.exe /portable /config:mt5cfg.ini"). Fallback: that exact command
 # line (MetaQuotes' own Mac app starts the terminal differently).
+# Every instance runs the same command line (terminal64.exe /portable /config:mt5cfg.ini), so a terminal is told
+# apart by its working folder: this instance's MT5 folder. Without this, stopping one instance found and killed
+# another instance's terminal.
+proc_cwd() {
+  if [ -e "/proc/$1/cwd" ]; then readlink "/proc/$1/cwd" 2>/dev/null
+  else lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | tail -1; fi
+}
+own_terminal() {  # own_terminal <pid>: true when that process works in this instance's MT5 folder (or cannot be told)
+  local cwd; cwd="$(proc_cwd "$1")"
+  [ -z "$cwd" ] || [ "$cwd" -ef "$MT5_DIR" ]
+}
 mt5_running() {
-  pid_alive "$(read_pid mt5)" && return 0
-  local pid; pid="$(pgrep -f '^terminal64\.exe /portable /config:mt5cfg\.ini' 2>/dev/null | head -1)"
-  [ -n "$pid" ] && echo "$pid" >"$STATE/mt5.pid"
+  local pid; pid="$(read_pid mt5)"
+  pid_alive "$pid" && own_terminal "$pid" && return 0
+  for pid in $(pgrep -f '^terminal64\.exe /portable /config:mt5cfg\.ini' 2>/dev/null); do
+    if [ -n "$(proc_cwd "$pid")" ] && own_terminal "$pid"; then echo "$pid" >"$STATE/mt5.pid"; return 0; fi
+  done
+  return 1
 }
 
 start_status() {
@@ -700,7 +714,7 @@ stop_mt5() {
   log "MT5 did not close in 30s, forcing"
   "$WINE" taskkill /IM terminal64.exe /F >/dev/null 2>&1 || true
   sleep 2
-  kill "$(read_pid mt5)" 2>/dev/null || true
+  mt5_running && kill "$(read_pid mt5)" 2>/dev/null || true      # only a terminal that is this instance's own
 }
 
 start_bridge() {

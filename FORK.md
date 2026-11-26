@@ -22,6 +22,9 @@ Python: `MetaTrader5(host="127.0.0.1", port=8011)`.
   systemd `--setenv`). An instance never downloads into or deletes the shared Wine; `reset-all` of the default instance
   keeps Wine while other instances exist.
 - `instances.sh` (new): add, start, stop, restart, status, list, start-all, stop-all, remove, env.
+- An instance recognises its own terminal by its working folder (`mt5_running`, `own_terminal`). Upstream looks for
+  any `terminal64.exe`; with two instances, stopping one waited 30 s and then killed the other's terminal (found and
+  fixed on 2026-11-26: after the fix a stop takes about 4 s and leaves the others alone).
 - The default instance, the `smt5` command line and the desktop app are unchanged: they manage the default instance.
 - Each instance: about 1.2 GB on disk (its Wine prefix with MT5 and Windows Python) and about 600 MB of memory.
 
