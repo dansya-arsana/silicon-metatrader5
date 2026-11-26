@@ -1,3 +1,5 @@
+> **Fork for Radar** — adds several MT5 terminals side by side (one per broker account). See [FORK.md](FORK.md). Upstream: [bahadirumutiscimen/silicon-metatrader5](https://github.com/bahadirumutiscimen/silicon-metatrader5).
+
 <div align="center">
 
 <picture>

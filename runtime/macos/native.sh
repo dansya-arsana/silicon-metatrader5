@@ -27,18 +27,26 @@
 # Ports: bridge SMT5_BRIDGE_PORT (8001) and status API SMT5_STATUS_PORT (8002),
 # always bound to 127.0.0.1. The MT5 window is an ordinary macOS window.
 #
+# Several instances side by side (one MT5 terminal + bridge each, e.g. one per
+# broker account): runtime/macos/instances.sh. Each instance has its own folder
+# (SMT5_NATIVE_HOME), launchd label / systemd unit (SMT5_LABEL / SMT5_UNIT) and
+# ports, and shares the default instance's Wine download (SMT5_WINE_HOME).
+#
 # Bash 3.2 (macOS /bin/bash): no associative arrays, no GNU sed/stat/flock.
 set -uo pipefail
 
 OS="$(uname -s)"
-LABEL=com.siliconmt5.runtime              # macOS launchd label
-UNIT=siliconmt5-runtime                   # Linux systemd --user unit
+LABEL="${SMT5_LABEL:-com.siliconmt5.runtime}"   # macOS launchd label (one per instance)
+UNIT="${SMT5_UNIT:-siliconmt5-runtime}"         # Linux systemd --user unit (one per instance)
+case "$LABEL$UNIT" in *[!A-Za-z0-9._-]*) echo "SMT5_LABEL / SMT5_UNIT: letters, digits, . _ - only" >&2; exit 2 ;; esac
 if [ "$OS" = Darwin ]; then
   BASE="${SMT5_NATIVE_HOME:-$HOME/Library/Application Support/SiliconMT5}"
 else
   BASE="${SMT5_NATIVE_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/siliconmt5}"
 fi
-WINE_HOME="$BASE/wine"
+WINE_HOME="${SMT5_WINE_HOME:-$BASE/wine}"       # shared by instances (read-only for them)
+DEFAULT_BASE="$( [ "$OS" = Darwin ] && echo "$HOME/Library/Application Support/SiliconMT5" || echo "${XDG_DATA_HOME:-$HOME/.local/share}/siliconmt5" )"
+INSTANCES_HOME="${SMT5_INSTANCES_HOME:-$DEFAULT_BASE-instances}"
 PREFIX="$BASE/prefix"
 PROBE_PREFIX="$BASE/native-probe"         # left by the earlier speed probe: reused on install
 VENV="$BASE/venv"
@@ -181,6 +189,7 @@ ensure_wine() {
     [ -n "${SMT5_WINE:-}" ] && die "SMT5_WINE=$SMT5_WINE Wine $major: en az Wine 11 gerekli"
     log "Wine $major eski, Wine $WINE_PIN indirilecek"
   fi
+  [ -n "${SMT5_WINE_HOME:-}" ] && die "no Wine $WINE_PIN in $WINE_HOME (shared with the default instance): install or start the default instance first"
   local tmp; tmp="$(mktemp -d)"
   log "Wine $WINE_PIN indiriliyor ($WINE_DESC)"
   curl -fL --retry 3 --progress-bar -o "$tmp/wine.tar.xz" "$WINE_URL" || { rm -rf "$tmp"; die "Wine indirilemedi"; }
@@ -340,6 +349,11 @@ cmd_install() {
 }
 
 # ------------------------------------------------------------ start/stop ---
+xml_esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+# The variables that make this instance itself, for the background job (launchd
+# and systemd do not inherit the shell's environment).
+instance_vars() { local v; for v in SMT5_NATIVE_HOME SMT5_LABEL SMT5_UNIT SMT5_WINE_HOME SMT5_ENV_FILE SMT5_INSTANCES_HOME; do [ -n "${!v:-}" ] && echo "$v"; done; }
+instance_env_plist() { local v; for v in $(instance_vars); do printf '<key>%s</key><string>%s</string>' "$v" "$(xml_esc "${!v}")"; done; }
 write_plist() {
   local esc_script esc_logs
   esc_script="$(printf '%s' "$RT/macos/native.sh" | sed 's/&/\&amp;/g; s/</\&lt;/g')"
@@ -350,6 +364,8 @@ write_plist() {
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$LABEL</string>
+  <key>EnvironmentVariables</key>
+  <dict>$(instance_env_plist)</dict>
   <key>ProgramArguments</key>
   <array><string>/bin/bash</string><string>$esc_script</string><string>supervise</string></array>
   <key>RunAtLoad</key><true/>
@@ -390,7 +406,7 @@ cmd_start() {
   local envs=() v dmode
   dmode="$(display_mode)"
   envs+=("--setenv=SMT5_NATIVE_DISPLAY=$dmode")
-  for v in XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS SMT5_ENV_FILE; do
+  for v in XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS SMT5_ENV_FILE $(instance_vars); do
     [ -n "${!v:-}" ] && envs+=("--setenv=$v=${!v}")
   done
   if [ "$dmode" = window ]; then
@@ -487,7 +503,13 @@ cmd_reset() {  # MT5 data (prefix) only; Wine download and venv stay
 
 cmd_reset_all() {
   cmd_stop
-  rm -rf "$PREFIX" "$PROBE_PREFIX" "$STATE" "$VENV" "$WINE_HOME" "$WINE_HOME.new" "$WINE_HOME.old" "$LOGS" "$RT"
+  local wine_dirs=("$WINE_HOME" "$WINE_HOME.new" "$WINE_HOME.old")
+  if [ -n "${SMT5_WINE_HOME:-}" ]; then
+    wine_dirs=()                          # an instance: the Wine folder belongs to the default instance
+  elif [ -n "$(ls -A "$INSTANCES_HOME" 2>/dev/null)" ]; then
+    wine_dirs=(); log "Wine kept: other instances use it ($INSTANCES_HOME)"
+  fi
+  rm -rf "$PREFIX" "$PROBE_PREFIX" "$STATE" "$VENV" ${wine_dirs[@]+"${wine_dirs[@]}"} "$LOGS" "$RT"
   log "yerel modun tüm dosyaları silindi ($BASE)"
 }
 

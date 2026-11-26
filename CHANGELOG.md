@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0-radar.1 (fork)
+
+- Several native instances side by side: `runtime/macos/instances.sh`; `SMT5_LABEL`, `SMT5_UNIT`, `SMT5_WINE_HOME` in `native.sh`. See [FORK.md](FORK.md).
+
 ## 1.3.0
 
 The desktop app release. Details and numbers: [release notes](docs/releases/v1.3.0.md).
